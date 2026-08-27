@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+torch
+torchvision
+transformers>=4.40.2
+opencv-python
+python-multipart
+pillow
+numpy
+sentencepiece

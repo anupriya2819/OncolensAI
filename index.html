@@ -1,0 +1,3950 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>OncoLens AI</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<style>
+body{
+  margin:0;
+  background:#f7fafc;
+  color:#19344d;
+  font-family:Inter,system-ui,sans-serif
+}
+
+.card{
+  background:#fff;
+  border:1px solid #e6eef4;
+  border-radius:18px;
+  box-shadow:0 10px 28px rgba(27,76,111,.07)
+}
+
+.btn{
+  border-radius:12px;
+  height:40px;
+  padding:0 16px;
+  font-size:13px;
+  font-weight:700
+}
+
+.grad{
+  background:linear-gradient(90deg,#22b8cf,#2563eb);
+  color:white
+}
+
+.fade{
+  animation:f .25s ease both
+}
+
+@keyframes f{
+  from{
+    opacity:0;
+    transform:translateY(5px)
+  }
+  to{
+    opacity:1;
+    transform:none
+  }
+}
+
+@media print{
+  .no-print{
+    display:none!important
+  }
+
+  .print-wrap{
+    margin:0!important;
+    padding:0!important
+  }
+
+  .card{
+    box-shadow:none!important
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+
+const {useState,useEffect}=React;
+
+const NAV=[
+  ["dashboard","Dashboard"],
+  ["newPatient","New Patient"],
+  ["patients","Existing Patients"],
+  ["analysis","New Analysis"],
+  ["history","Case History"],
+  ["compare","Compare Reports"],
+  ["reports","Reports"],
+  ["analytics","Analytics"],
+  ["hospital","Hospital Integration"],
+  ["cloud","Cloud Storage"],
+  ["assistant","AI Assistant"],
+  ["settings","Settings"]
+];
+
+const demoResult={
+  patientId:"PT-7734",
+  prediction:"Likely malignant",
+  confidence:87.4,
+  malignancyProbability:87.4,
+  confidenceBand:"Moderate",
+  modelStatus:"DEMO CASE",
+
+  biomarkers:[
+    {
+      name:"ER/PR",
+      priority:"High",
+      rationale:"Prioritize confirmatory receptor testing after pathologist review."
+    },
+    {
+      name:"HER2",
+      priority:"High",
+      rationale:"Prioritize confirmatory IHC/ISH if invasive malignancy is confirmed."
+    },
+    {
+      name:"Ki-67",
+      priority:"Medium",
+      rationale:"Consider proliferative-index testing according to local protocol."
+    }
+  ],
+
+  report:
+    "AI-assisted assessment suggests a high-risk malignant pattern in the submitted H&E image. The attention overlay highlights regions that most influenced the model workflow. Reflex biomarker testing is prioritized for ER/PR and HER2, with Ki-67 as a secondary priority. Findings require pathologist confirmation.",
+
+  disclaimer:
+    "AI-assisted decision support only. Pathologist confirmation is required. Prototype pending clinical validation."
+};
+
+const patients=[
+  {
+    id:"PT-7734",
+    name:"Jeet Sharma",
+    age:52,
+    cases:3
+  },
+  {
+    id:"PT-7741",
+    name:"Nisha Verma",
+    age:47,
+    cases:1
+  },
+  {
+    id:"PT-7698",
+    name:"Riya Singh",
+    age:61,
+    cases:2
+  }
+];
+
+
+function App(){
+
+  const [page,setPage]=useState("dashboard");
+
+  const [api,setApi]=useState(
+    localStorage.ol_api || ""
+  );
+
+  const [status,setStatus]=useState("idle");
+
+  const [file,setFile]=useState(null);
+
+  const [preview,setPreview]=useState("");
+
+  const [patientId,setPatientId]=useState("PT-7734");
+
+  const [result,setResult]=useState(demoResult);
+
+  const [loading,setLoading]=useState(false);
+
+  const [step,setStep]=useState(1);
+
+  const [chat,setChat]=useState([
+    {
+      who:"ai",
+      text:
+        "Ask me about the current case, confidence, heatmap, or biomarker priorities."
+    }
+  ]);
+
+  const [input,setInput]=useState("");
+
+  const [specialists,setSpecialists]=useState(false);
+
+  const [saved,setSaved]=useState(
+    ()=>JSON.parse(localStorage.ol_reports || "[]")
+  );
+
+
+  useEffect(()=>{
+    localStorage.ol_api=api
+  },[api]);
+
+
+  useEffect(()=>{
+    localStorage.ol_reports=JSON.stringify(saved)
+  },[saved]);
+
+
+  const test=async()=>{
+
+    if(!api){
+      alert("Paste the Ngrok backend URL first.");
+      return;
+    }
+
+    setStatus("testing");
+
+    try{
+
+      let r=await fetch(
+        api.replace(/\/+$/,"")+"/health",
+        {
+          headers:{
+            "ngrok-skip-browser-warning":"true"
+          }
+        }
+      );
+
+      if(!r.ok){
+        throw 0;
+      }
+
+      setStatus("connected");
+
+    }catch{
+
+      setStatus("error");
+
+      alert(
+        "Backend not connected. Check FastAPI + Ngrok URL."
+      );
+
+    }
+  };
+
+
+  const upload=f=>{
+
+    if(!f){
+      return;
+    }
+
+    setFile(f);
+
+    setPreview(
+      URL.createObjectURL(f)
+    );
+
+    setStep(2);
+
+    setTimeout(
+      ()=>setStep(3),
+      600
+    );
+  };
+
+
+  const analyze=async()=>{
+
+    if(!file){
+      alert("Upload an H&E image first.");
+      return;
+    }
+
+    if(!api){
+      alert("Paste Ngrok URL first.");
+      return;
+    }
+
+    setLoading(true);
+
+    setStep(4);
+
+    try{
+
+      let fd=new FormData();
+
+      fd.append(
+        "file",
+        file
+      );
+
+      fd.append(
+        "patientId",
+        patientId
+      );
+
+
+      let r=await fetch(
+        api.replace(/\/+$/,"")+"/analyze",
+        {
+          method:"POST",
+
+          headers:{
+            "ngrok-skip-browser-warning":"true"
+          },
+
+          body:fd
+        }
+      );
+
+
+      let d=await r.json();
+
+
+      if(!r.ok){
+
+        throw new Error(
+          d.detail || "Analysis failed"
+        );
+
+      }
+
+
+      setResult(d);
+
+      setStatus("connected");
+
+      setStep(5);
+
+
+      setSaved(v=>[
+        {
+          ...d,
+
+          createdAt:
+            new Date().toISOString(),
+
+          reportId:
+            "RPT-"+Date.now().toString().slice(-6)
+        },
+
+        ...v
+      ].slice(0,20));
+
+
+    }catch(e){
+
+      alert(e.message);
+
+      setStep(3);
+
+    }finally{
+
+      setLoading(false);
+
+    }
+
+  };
+
+
+  const ask=()=>{
+
+    if(!input.trim()){
+      return;
+    }
+
+
+    let q=input.toLowerCase();
+
+    let a;
+
+
+    if(q.includes("heat")){
+
+      a=
+        "The heatmap shows areas that most influenced the model. It is not a tumor segmentation map.";
+
+    }
+
+    else if(q.includes("her2")){
+
+      a=
+        "HER2 is a confirmatory-test priority suggestion only; the app does not claim HER2 positivity.";
+
+    }
+
+    else if(q.includes("confidence")){
+
+      a=
+        `Current displayed confidence is ${Number(result.confidence||0).toFixed(1)}%. Pathologist review is required.`;
+
+    }
+
+    else if(
+      q.includes("summary") ||
+      q.includes("case")
+    ){
+
+      a=result.report;
+
+    }
+
+    else if(
+      q.includes("doctor") ||
+      q.includes("specialist")
+    ){
+
+      a=
+        "Opening the demo specialist directory.";
+
+      setSpecialists(true);
+
+    }
+
+    else{
+
+      a=
+        "I can explain the current case, confidence, heatmap, biomarkers, report, or specialist options. I do not give a definitive diagnosis or treatment plan.";
+
+    }
+
+
+    setChat(c=>[
+      ...c,
+
+      {
+        who:"user",
+        text:input
+      },
+
+      {
+        who:"ai",
+        text:a
+      }
+    ]);
+
+
+    setInput("");
+
+  };
+
+
+  return(
+
+    <div className="min-h-screen flex">
+
+
+      <aside className="
+        no-print
+        fixed
+        left-0
+        top-0
+        bottom-0
+        w-[245px]
+        bg-white
+        border-r
+        border-slate-200
+        flex
+        flex-col
+      ">
+
+
+        <div className="
+          h-[76px]
+          px-5
+          flex
+          items-center
+          gap-3
+          border-b
+        ">
+
+          <div className="
+            w-10
+            h-10
+            rounded-xl
+            grad
+            grid
+            place-items-center
+            text-xl
+          ">
+            ⌁
+          </div>
+
+
+          <div>
+
+            <b>
+              OncoLens AI
+            </b>
+
+            <div className="
+              text-[10px]
+              tracking-[.18em]
+              text-slate-400
+            ">
+              INSIGHT COMPASS
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div className="
+          p-3
+          overflow-auto
+          flex-1
+        ">
+
+          {
+            NAV.map(
+              ([id,label])=>
+
+              <button
+                onClick={()=>setPage(id)}
+                key={id}
+
+                className={`
+                  w-full
+                  text-left
+                  px-4
+                  py-2.5
+                  rounded-xl
+                  mb-1
+                  text-[13px]
+                  font-semibold
+
+                  ${
+                    page===id
+
+                    ? "bg-cyan-50 text-cyan-700"
+
+                    : "text-slate-500 hover:bg-slate-50"
+                  }
+                `}
+              >
+
+                {label}
+
+              </button>
+            )
+          }
+
+        </div>
+
+
+        <div className="
+          p-3
+          border-t
+        ">
+
+          <button className="
+            w-full
+            px-4
+            py-2.5
+            text-left
+            text-sm
+            text-slate-500
+          ">
+
+            Logout
+
+          </button>
+
+        </div>
+
+      </aside>
+
+
+
+      <section className="
+        ml-[245px]
+        flex-1
+      ">
+
+
+        <header className="
+          no-print
+          sticky
+          top-0
+          z-20
+          h-[76px]
+          bg-white/95
+          border-b
+          px-6
+          flex
+          items-center
+          gap-3
+        ">
+
+
+          <div className="
+            flex-1
+            max-w-[480px]
+            h-10
+            bg-slate-50
+            border
+            rounded-xl
+            px-3
+            flex
+            items-center
+          ">
+
+            <span>
+              ⌕
+            </span>
+
+            <input
+              className="
+                bg-transparent
+                flex-1
+                px-2
+                text-sm
+              "
+
+              placeholder="
+                Search patients, cases, reports...
+              "
+            />
+
+          </div>
+
+
+
+          <div className="
+            ml-auto
+            flex
+            items-center
+            gap-2
+          ">
+
+
+            <input
+              value={api}
+
+              onChange={
+                e=>{
+                  setApi(e.target.value);
+                  setStatus("idle");
+                }
+              }
+
+              className="
+                hidden
+                xl:block
+                h-9
+                w-[280px]
+                px-3
+                rounded-lg
+                border
+                text-xs
+              "
+
+              placeholder="
+                Paste Ngrok URL
+              "
+            />
+
+
+            <button
+              onClick={test}
+
+              className="
+                hidden
+                xl:block
+                btn
+                border
+                bg-white
+              "
+            >
+
+              Test
+
+            </button>
+
+
+            <div className={`
+              px-3
+              h-9
+              rounded-full
+              border
+              flex
+              items-center
+              text-xs
+              font-semibold
+
+              ${
+                status==="connected"
+
+                ? "bg-emerald-50 text-emerald-700"
+
+                : status==="error"
+
+                ? "bg-rose-50 text-rose-700"
+
+                : "bg-slate-50 text-slate-500"
+              }
+            `}>
+
+              {
+                status==="connected"
+
+                ? "● Backend Connected"
+
+                : status==="testing"
+
+                ? "● Testing..."
+
+                : status==="error"
+
+                ? "● Backend Error"
+
+                : "○ Backend"
+              }
+
+            </div>
+
+
+            <div className="
+              w-9
+              h-9
+              rounded-full
+              bg-cyan-100
+              grid
+              place-items-center
+              text-cyan-700
+              font-bold
+            ">
+
+              KM
+
+            </div>
+
+
+            <div className="
+              hidden
+              md:block
+            ">
+
+              <div className="
+                text-xs
+                font-bold
+              ">
+                Dr. Kavya Mehra
+              </div>
+
+              <div className="
+                text-[10px]
+                text-slate-400
+              ">
+                Pathologist
+              </div>
+
+            </div>
+
+          </div>
+
+        </header>
+
+
+
+        <main className="p-7">
+
+          {
+            page==="dashboard" &&
+
+            <Dashboard
+              setPage={setPage}
+              setPatientId={setPatientId}
+            />
+          }
+
+
+          {
+            page==="newPatient" &&
+
+            <NewPatient
+              setPage={setPage}
+            />
+          }
+
+
+          {
+            page==="patients" &&
+
+            <Patients
+              setPage={setPage}
+              setPatientId={setPatientId}
+            />
+          }
+
+
+          {
+            page==="analysis" &&
+
+            <Analysis
+
+              step={step}
+
+              setStep={setStep}
+
+              patientId={patientId}
+
+              setPatientId={setPatientId}
+
+              upload={upload}
+
+              preview={preview}
+
+              result={result}
+
+              analyze={analyze}
+
+              loading={loading}
+
+              setPage={setPage}
+
+              openSpecialists={
+                ()=>setSpecialists(true)
+              }
+            />
+          }
+
+
+          {
+            page==="history" &&
+
+            <History
+              saved={saved}
+              setResult={setResult}
+              setPage={setPage}
+            />
+          }
+
+
+          {
+            page==="compare" &&
+
+            <Compare
+              saved={saved}
+            />
+          }
+
+
+          {
+            page==="reports" &&
+
+            <Reports
+              r={result}
+
+              openSpecialists={
+                ()=>setSpecialists(true)
+              }
+            />
+          }
+
+
+          {
+            page==="analytics" &&
+
+            <Analytics/>
+          }
+
+
+          {
+            page==="hospital" &&
+
+            <Hospital/>
+          }
+
+
+          {
+            page==="cloud" &&
+
+            <Cloud/>
+          }
+
+
+          {
+            page==="assistant" &&
+
+            <Assistant
+
+              chat={chat}
+
+              input={input}
+
+              setInput={setInput}
+
+              ask={ask}
+
+              result={result}
+            />
+          }
+
+
+          {
+            page==="settings" &&
+
+            <Settings
+
+              api={api}
+
+              setApi={setApi}
+
+              test={test}
+
+              status={status}
+            />
+          }
+
+        </main>
+
+      </section>
+
+
+      {
+        specialists &&
+
+        <Specialists
+          close={
+            ()=>setSpecialists(false)
+          }
+        />
+      }
+
+    </div>
+
+  );
+}
+
+
+
+const Title=({
+  k,
+  t,
+  s,
+  children
+})=>
+
+<div className="
+  flex
+  justify-between
+  items-end
+  mb-6
+">
+
+  <div>
+
+    <div className="
+      text-xs
+      tracking-[.12em]
+      font-bold
+      text-cyan-600
+    ">
+      {k}
+    </div>
+
+    <h1 className="
+      text-3xl
+      font-bold
+      mt-1
+    ">
+      {t}
+    </h1>
+
+    <p className="
+      text-sm
+      text-slate-500
+      mt-1
+    ">
+      {s}
+    </p>
+
+  </div>
+
+  {children}
+
+</div>;
+
+
+
+function Dashboard({
+  setPage,
+  setPatientId
+}){
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="CLINICAL WORKSPACE"
+        t="Dashboard"
+        s="Overview of patients, analyses and reports."
+      >
+
+        <div className="flex gap-2">
+
+          <button
+            onClick={
+              ()=>setPage("newPatient")
+            }
+
+            className="
+              btn
+              border
+              bg-white
+            "
+          >
+            + New Patient
+          </button>
+
+
+          <button
+            onClick={
+              ()=>setPage("analysis")
+            }
+
+            className="
+              btn
+              grad
+            "
+          >
+            ⌁ New Analysis
+          </button>
+
+        </div>
+
+      </Title>
+
+
+
+      <div className="
+        grid
+        md:grid-cols-2
+        xl:grid-cols-4
+        gap-4
+      ">
+
+        {
+          [
+            ["Total Patients","28"],
+            ["Completed Reports","19"],
+            ["Pending Review","4"],
+            ["High Priority","3"]
+          ].map(
+            x=>
+
+            <div
+              className="
+                card
+                p-5
+              "
+
+              key={x[0]}
+            >
+
+              <div className="
+                text-xs
+                text-slate-400
+                uppercase
+              ">
+                {x[0]}
+              </div>
+
+              <div className="
+                text-3xl
+                font-bold
+                mt-3
+              ">
+                {x[1]}
+              </div>
+
+              <div className="
+                text-xs
+                text-cyan-700
+                mt-2
+              ">
+                Demo metric
+              </div>
+
+            </div>
+          )
+        }
+
+      </div>
+
+
+
+      <div className="
+        grid
+        xl:grid-cols-[1.25fr_.75fr]
+        gap-5
+        mt-5
+      ">
+
+
+        <div className="
+          card
+          overflow-hidden
+        ">
+
+          <div className="
+            p-5
+            border-b
+          ">
+
+            <b>
+              Recent Patients
+            </b>
+
+          </div>
+
+
+          {
+            patients.map(
+              p=>
+
+              <div
+                className="
+                  p-4
+                  border-b
+                  flex
+                  items-center
+                "
+
+                key={p.id}
+              >
+
+
+                <div className="
+                  w-9
+                  h-9
+                  rounded-full
+                  bg-cyan-50
+                  grid
+                  place-items-center
+                  text-cyan-700
+                  font-bold
+                ">
+
+                  {p.name[0]}
+
+                </div>
+
+
+                <div className="
+                  ml-3
+                  flex-1
+                ">
+
+                  <b className="text-sm">
+                    {p.name}
+                  </b>
+
+                  <div className="
+                    text-xs
+                    text-slate-400
+                  ">
+
+                    {p.id}
+                    {" • "}
+                    {p.age}
+                    {" yrs • "}
+                    {p.cases}
+                    {" cases"}
+
+                  </div>
+
+                </div>
+
+
+                <button
+
+                  onClick={
+                    ()=>{
+
+                      setPatientId(
+                        p.id
+                      );
+
+                      setPage(
+                        "analysis"
+                      );
+
+                    }
+                  }
+
+                  className="
+                    btn
+                    bg-cyan-50
+                    text-cyan-700
+                  "
+                >
+
+                  New Analysis
+
+                </button>
+
+              </div>
+            )
+          }
+
+        </div>
+
+
+
+        <div className="
+          card
+          p-5
+        ">
+
+          <b>
+            Recent Activity
+          </b>
+
+
+          {
+            [
+              "PT-7734 analysis completed",
+              "Report reviewed",
+              "HER2 priority updated",
+              "New patient added"
+            ].map(
+              (a,i)=>
+
+              <div
+                className="
+                  flex
+                  gap-3
+                  mt-4
+                "
+
+                key={a}
+              >
+
+                <span className="
+                  w-7
+                  h-7
+                  rounded-full
+                  bg-emerald-50
+                  grid
+                  place-items-center
+                  text-emerald-700
+                ">
+                  ✓
+                </span>
+
+
+                <div>
+
+                  <div className="text-sm">
+                    {a}
+                  </div>
+
+                  <div className="
+                    text-xs
+                    text-slate-400
+                  ">
+                    {i+1}h ago
+                  </div>
+
+                </div>
+
+              </div>
+            )
+          }
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function NewPatient({
+  setPage
+}){
+
+  return(
+
+    <div className="
+      fade
+      max-w-4xl
+    ">
+
+
+      <Title
+        k="PATIENT MANAGEMENT"
+        t="New Patient"
+        s="Register a de-identified patient for the prototype."
+      />
+
+
+      <div className="
+        card
+        p-6
+        grid
+        md:grid-cols-2
+        gap-4
+      ">
+
+        {
+          [
+            "Full Name",
+            "Age",
+            "Hospital ID",
+            "Referring Doctor"
+          ].map(
+            x=>
+
+            <label
+              className="
+                text-sm
+                font-semibold
+              "
+
+              key={x}
+            >
+
+              {x}
+
+              <input className="
+                mt-2
+                h-11
+                w-full
+                rounded-xl
+                border
+                px-3
+                bg-slate-50
+              "/>
+
+            </label>
+          )
+        }
+
+
+        <label className="
+          text-sm
+          font-semibold
+        ">
+
+          Gender
+
+          <select className="
+            mt-2
+            h-11
+            w-full
+            rounded-xl
+            border
+            px-3
+            bg-slate-50
+          ">
+
+            <option>
+              Female
+            </option>
+
+            <option>
+              Male
+            </option>
+
+            <option>
+              Other
+            </option>
+
+          </select>
+
+        </label>
+
+
+        <div className="
+          md:col-span-2
+          text-right
+        ">
+
+          <button
+            onClick={
+              ()=>setPage("patients")
+            }
+
+            className="
+              btn
+              grad
+            "
+          >
+
+            Save Patient
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Patients({
+  setPage,
+  setPatientId
+}){
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="PATIENT MANAGEMENT"
+        t="Existing Patients"
+        s="Continue a previous case or start a new analysis."
+      />
+
+
+      <div className="
+        grid
+        lg:grid-cols-2
+        xl:grid-cols-3
+        gap-4
+      ">
+
+        {
+          patients.map(
+            p=>
+
+            <div
+              className="
+                card
+                p-5
+              "
+
+              key={p.id}
+            >
+
+
+              <div className="
+                flex
+                items-center
+                gap-3
+              ">
+
+                <div className="
+                  w-11
+                  h-11
+                  rounded-full
+                  bg-cyan-50
+                  grid
+                  place-items-center
+                  font-bold
+                  text-cyan-700
+                ">
+
+                  {p.name[0]}
+
+                </div>
+
+
+                <div>
+
+                  <b>
+                    {p.name}
+                  </b>
+
+                  <div className="
+                    text-xs
+                    text-slate-400
+                  ">
+                    {p.id}
+                  </div>
+
+                </div>
+
+              </div>
+
+
+
+              <div className="
+                grid
+                grid-cols-2
+                gap-2
+                mt-4
+              ">
+
+                <div className="
+                  bg-slate-50
+                  rounded-xl
+                  p-3
+                  text-xs
+                ">
+
+                  Age
+
+                  <br/>
+
+                  <b>
+                    {p.age}
+                  </b>
+
+                </div>
+
+
+                <div className="
+                  bg-slate-50
+                  rounded-xl
+                  p-3
+                  text-xs
+                ">
+
+                  Cases
+
+                  <br/>
+
+                  <b>
+                    {p.cases}
+                  </b>
+
+                </div>
+
+              </div>
+
+
+              <button
+
+                onClick={
+                  ()=>{
+
+                    setPatientId(
+                      p.id
+                    );
+
+                    setPage(
+                      "analysis"
+                    );
+
+                  }
+                }
+
+                className="
+                  btn
+                  grad
+                  w-full
+                  mt-4
+                "
+              >
+
+                New Case
+
+              </button>
+
+            </div>
+          )
+        }
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Steps({
+  step
+}){
+
+  return(
+
+    <div className="
+      card
+      p-5
+      flex
+      gap-2
+      overflow-auto
+      mb-5
+    ">
+
+      {
+        [
+          "Case & Upload",
+          "Quality Check",
+          "Preprocessing",
+          "AI Processing",
+          "Results"
+        ].map(
+          (x,i)=>
+
+          <div
+
+            className={`
+              flex-1
+              min-w-[130px]
+              text-xs
+              font-bold
+
+              ${
+                step>=i+1
+
+                ? "text-cyan-700"
+
+                : "text-slate-400"
+              }
+            `}
+
+            key={x}
+          >
+
+
+            <span className={`
+              inline-grid
+              place-items-center
+              w-7
+              h-7
+              rounded-full
+              mr-2
+
+              ${
+                step>=i+1
+
+                ? "bg-cyan-600 text-white"
+
+                : "bg-slate-100"
+              }
+            `}>
+
+              {i+1}
+
+            </span>
+
+            {x}
+
+          </div>
+        )
+      }
+
+    </div>
+  );
+}
+
+
+
+function Analysis({
+  step,
+  setStep,
+  patientId,
+  setPatientId,
+  upload,
+  preview,
+  result,
+  analyze,
+  loading,
+  setPage,
+  openSpecialists
+}){
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="AI PATHOLOGY WORKFLOW"
+        t="New Analysis"
+        s="Five-step slide review from upload to explainable result."
+      />
+
+
+      <Steps
+        step={step}
+      />
+
+
+      <div className="
+        grid
+        xl:grid-cols-[1.1fr_.9fr]
+        gap-5
+      ">
+
+
+        <div className="
+          card
+          overflow-hidden
+        ">
+
+
+          <div className="
+            p-5
+            border-b
+          ">
+
+            <b>
+              Case Details & H&E Upload
+            </b>
+
+          </div>
+
+
+
+          <div className="
+            p-5
+            grid
+            md:grid-cols-2
+            gap-4
+          ">
+
+
+            <label className="
+              text-xs
+              font-semibold
+            ">
+
+              Patient ID
+
+              <input
+
+                value={patientId}
+
+                onChange={
+                  e=>setPatientId(
+                    e.target.value
+                  )
+                }
+
+                className="
+                  mt-2
+                  w-full
+                  h-10
+                  rounded-xl
+                  border
+                  px-3
+                  bg-slate-50
+                "
+              />
+
+            </label>
+
+
+
+            <label className="
+              text-xs
+              font-semibold
+            ">
+
+              Sample ID
+
+              <input
+                defaultValue="SMP-7734-A"
+
+                className="
+                  mt-2
+                  w-full
+                  h-10
+                  rounded-xl
+                  border
+                  px-3
+                  bg-slate-50
+                "
+              />
+
+            </label>
+
+
+
+            <label className="
+              text-xs
+              font-semibold
+              md:col-span-2
+            ">
+
+              Clinical History
+
+              <textarea
+
+                defaultValue="
+                  Breast lump; core biopsy submitted for AI-assisted slide review.
+                "
+
+                className="
+                  mt-2
+                  w-full
+                  h-20
+                  rounded-xl
+                  border
+                  px-3
+                  py-2
+                  bg-slate-50
+                "
+              />
+
+            </label>
+
+          </div>
+
+
+
+          <div className="
+            p-5
+            pt-0
+          ">
+
+
+            <div className="
+              min-h-[310px]
+              rounded-2xl
+              border-2
+              border-dashed
+              border-cyan-200
+              bg-cyan-50/40
+              flex
+              items-center
+              justify-center
+              overflow-hidden
+              relative
+            ">
+
+
+              {
+                preview
+
+                ?
+
+                <img
+                  src={preview}
+
+                  className="
+                    max-h-[390px]
+                    max-w-full
+                  "
+                />
+
+                :
+
+                <label className="
+                  cursor-pointer
+                  text-center
+                  p-10
+                ">
+
+                  <div className="
+                    text-4xl
+                    text-cyan-600
+                  ">
+                    ↑
+                  </div>
+
+                  <b>
+                    Upload H&E slide image
+                  </b>
+
+                  <div className="
+                    text-xs
+                    text-slate-400
+                    mt-2
+                  ">
+                    Click to browse
+                  </div>
+
+
+                  <input
+
+                    type="file"
+
+                    accept="image/*"
+
+                    className="hidden"
+
+                    onChange={
+                      e=>upload(
+                        e.target.files[0]
+                      )
+                    }
+                  />
+
+                </label>
+              }
+
+
+
+              {
+                loading &&
+
+                <div className="
+                  absolute
+                  inset-0
+                  bg-slate-900/75
+                  grid
+                  place-items-center
+                  text-white
+                ">
+
+                  <div className="text-center">
+
+                    <div className="text-3xl">
+                      ⌁
+                    </div>
+
+                    <b>
+                      Running AI pipeline...
+                    </b>
+
+                    <div className="
+                      text-xs
+                      mt-2
+                    ">
+                      Phikon-v2 → MIL → heatmap → report
+                    </div>
+
+                  </div>
+
+                </div>
+              }
+
+            </div>
+
+
+
+            <div className="
+              flex
+              gap-2
+              mt-4
+              flex-wrap
+            ">
+
+
+              <button
+                onClick={
+                  ()=>setStep(2)
+                }
+
+                className="
+                  btn
+                  border
+                  bg-white
+                "
+              >
+                Quality Check
+              </button>
+
+
+              <button
+                onClick={
+                  ()=>setStep(3)
+                }
+
+                className="
+                  btn
+                  border
+                  bg-white
+                "
+              >
+                Preprocess
+              </button>
+
+
+              <button
+                onClick={analyze}
+
+                className="
+                  btn
+                  grad
+                "
+              >
+                Run AI Analysis
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          space-y-5
+        ">
+
+
+          {
+            step===2 &&
+
+            <Flow
+
+              title="Quality Check"
+
+              rows={[
+                ["Resolution","Passed"],
+                ["Tissue detected","Yes"],
+                ["Blur","Acceptable"],
+                ["Stain quality","Acceptable"]
+              ]}
+            />
+          }
+
+
+
+          {
+            step===3 &&
+
+            <Flow
+
+              title="Preprocessing"
+
+              rows={[
+                ["Tissue filtering","Applied"],
+                ["Patch size","224 × 224"],
+                ["Color mode","RGB"],
+                ["Feature target","Phikon-v2 CLS"]
+              ]}
+            />
+          }
+
+
+
+          {
+            step>=4 &&
+
+            <div className="
+              card
+              p-5
+            ">
+
+              <div className="
+                text-xs
+                text-slate-400
+                uppercase
+                font-bold
+              ">
+                Malignancy Assessment
+              </div>
+
+
+              <div className="
+                flex
+                justify-between
+                mt-3
+              ">
+
+                <b className="
+                  text-xl
+                ">
+                  {result.prediction}
+                </b>
+
+
+                <b className="
+                  text-3xl
+                ">
+                  {
+                    Number(
+                      result.confidence || 0
+                    ).toFixed(1)
+                  }%
+                </b>
+
+              </div>
+
+
+
+              <div className="
+                h-2
+                bg-slate-100
+                rounded-full
+                mt-4
+                overflow-hidden
+              ">
+
+                <div
+
+                  className="
+                    h-full
+                    grad
+                  "
+
+                  style={{
+                    width:
+                      `${result.confidence || 0}%`
+                  }}
+                />
+
+              </div>
+
+            </div>
+          }
+
+
+
+          {
+            step>=5 &&
+
+            <>
+
+
+              <div className="
+                card
+                p-5
+              ">
+
+                <b>
+                  Biomarker Prioritization
+                </b>
+
+
+                <div className="
+                  mt-3
+                  space-y-3
+                ">
+
+                  {
+                    (
+                      result.biomarkers || []
+                    ).map(
+                      b=>
+
+                      <div
+
+                        key={b.name}
+
+                        className="
+                          border
+                          rounded-xl
+                          p-3
+                        "
+                      >
+
+                        <div className="
+                          flex
+                          justify-between
+                        ">
+
+                          <b>
+                            {b.name}
+                          </b>
+
+
+                          <span className="
+                            text-xs
+                            font-bold
+                            text-cyan-700
+                          ">
+                            {b.priority}
+                          </span>
+
+                        </div>
+
+
+                        <div className="
+                          text-xs
+                          text-slate-500
+                          mt-2
+                        ">
+                          {b.rationale}
+                        </div>
+
+                      </div>
+                    )
+                  }
+
+                </div>
+
+              </div>
+
+
+
+              <div className="
+                card
+                p-5
+              ">
+
+                <b>
+                  Clinical Summary
+                </b>
+
+
+                <p className="
+                  text-sm
+                  text-slate-600
+                  leading-6
+                  mt-3
+                ">
+                  {result.report}
+                </p>
+
+
+                <div className="
+                  flex
+                  gap-2
+                ">
+
+                  <button
+                    onClick={
+                      ()=>setPage("reports")
+                    }
+
+                    className="
+                      btn
+                      grad
+                    "
+                  >
+                    Open Report
+                  </button>
+
+
+                  <button
+
+                    onClick={openSpecialists}
+
+                    className="
+                      btn
+                      border
+                      bg-white
+                    "
+                  >
+                    Find Specialist
+                  </button>
+
+                </div>
+
+              </div>
+
+            </>
+          }
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Flow({
+  title,
+  rows
+}){
+
+  return(
+
+    <div className="
+      card
+      p-5
+    ">
+
+      <b>
+        {title}
+      </b>
+
+
+      {
+        rows.map(
+          ([a,b])=>
+
+          <div
+            key={a}
+
+            className="
+              flex
+              justify-between
+              py-3
+              border-b
+              text-sm
+            "
+          >
+
+            <span className="
+              text-slate-500
+            ">
+              {a}
+            </span>
+
+
+            <b className="
+              text-emerald-700
+            ">
+              {b}
+            </b>
+
+          </div>
+        )
+      }
+
+    </div>
+  );
+}
+
+
+
+function History({
+  saved,
+  setResult,
+  setPage
+}){
+
+  let rows=
+    saved.length
+
+    ? saved
+
+    : [
+      {
+        ...demoResult,
+
+        createdAt:
+          new Date().toISOString(),
+
+        reportId:
+          "RPT-DEMO"
+      }
+    ];
+
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="LONGITUDINAL REVIEW"
+        t="Case History"
+        s="Previously analyzed cases."
+      />
+
+
+      <div className="
+        card
+        overflow-hidden
+      ">
+
+        {
+          rows.map(
+            (r,i)=>
+
+            <div
+              key={i}
+
+              className="
+                p-4
+                border-b
+                grid
+                grid-cols-[1fr_1fr_.7fr_auto]
+                gap-3
+                items-center
+                text-sm
+              "
+            >
+
+              <b>
+                {r.patientId}
+              </b>
+
+              <span>
+                {r.prediction}
+              </span>
+
+              <span>
+
+                {
+                  Number(
+                    r.confidence || 0
+                  ).toFixed(1)
+                }%
+
+              </span>
+
+
+              <button
+
+                onClick={
+                  ()=>{
+
+                    setResult(r);
+
+                    setPage("reports");
+
+                  }
+                }
+
+                className="
+                  btn
+                  border
+                  bg-white
+                "
+              >
+
+                Open
+
+              </button>
+
+            </div>
+          )
+        }
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Compare({
+  saved
+}){
+
+  let a=
+    saved[0] || demoResult;
+
+
+  let b=
+    saved[1] ||
+
+    {
+      ...demoResult,
+
+      patientId:
+        "PT-7741",
+
+      prediction:
+        "Likely benign",
+
+      confidence:
+        82.1,
+
+      malignancyProbability:
+        17.9
+    };
+
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="DECISION SUPPORT"
+        t="Compare Reports"
+        s="Side-by-side case comparison."
+      />
+
+
+      <div className="
+        grid
+        lg:grid-cols-2
+        gap-5
+      ">
+
+        {
+          [a,b].map(
+            (r,i)=>
+
+            <div
+              className="
+                card
+                p-5
+              "
+
+              key={i}
+            >
+
+              <div className="
+                text-xs
+                text-slate-400
+              ">
+                CASE {i+1}
+              </div>
+
+
+              <h2 className="
+                text-xl
+                font-bold
+              ">
+                {r.patientId}
+              </h2>
+
+
+              <div className="
+                grid
+                grid-cols-2
+                gap-3
+                mt-4
+              ">
+
+                <M
+                  l="Prediction"
+                  v={r.prediction}
+                />
+
+                <M
+                  l="Confidence"
+
+                  v={
+                    `${Number(
+                      r.confidence || 0
+                    ).toFixed(1)}%`
+                  }
+                />
+
+              </div>
+
+
+
+              <div className="mt-4">
+
+                {
+                  (
+                    r.biomarkers || []
+                  ).map(
+                    x=>
+
+                    <div
+
+                      key={x.name}
+
+                      className="
+                        flex
+                        justify-between
+                        py-2
+                        border-b
+                        text-sm
+                      "
+                    >
+
+                      <span>
+                        {x.name}
+                      </span>
+
+                      <b>
+                        {x.priority}
+                      </b>
+
+                    </div>
+                  )
+                }
+
+              </div>
+
+            </div>
+          )
+        }
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+const M=({
+  l,
+  v
+})=>
+
+<div className="
+  bg-slate-50
+  rounded-xl
+  p-3
+">
+
+  <div className="
+    text-[10px]
+    text-slate-400
+    uppercase
+  ">
+    {l}
+  </div>
+
+  <b className="
+    text-sm
+  ">
+    {v}
+  </b>
+
+</div>;
+
+
+
+function Reports({
+  r,
+  openSpecialists
+}){
+
+  return(
+
+    <div className="
+      fade
+      print-wrap
+    ">
+
+
+      <div className="no-print">
+
+        <Title
+          k="CLINICAL DOCUMENTATION"
+          t="Reports"
+          s="Hospital-style AI-assisted pathology report."
+        >
+
+          <div className="
+            flex
+            gap-2
+          ">
+
+            <button
+              onClick={
+                ()=>window.print()
+              }
+
+              className="
+                btn
+                border
+                bg-white
+              "
+            >
+              Print
+            </button>
+
+
+            <button
+              onClick={
+                ()=>window.print()
+              }
+
+              className="
+                btn
+                grad
+              "
+            >
+              Download PDF
+            </button>
+
+          </div>
+
+        </Title>
+
+      </div>
+
+
+
+      <div className="
+        card
+        max-w-[1000px]
+        mx-auto
+        overflow-hidden
+      ">
+
+
+        <div className="
+          p-8
+          border-b-4
+          border-cyan-500
+          flex
+          justify-between
+        ">
+
+          <div>
+
+            <h2 className="
+              text-2xl
+              font-bold
+            ">
+              Apex Institute of Oncology
+            </h2>
+
+            <p className="
+              text-sm
+              text-slate-500
+            ">
+              Department of Pathology
+            </p>
+
+          </div>
+
+
+          <div className="
+            text-right
+          ">
+
+            <b className="
+              text-xl
+              text-cyan-700
+            ">
+              OncoLens AI
+            </b>
+
+            <div className="
+              text-xs
+              text-slate-400
+            ">
+              AI-Assisted Decision Support Report
+            </div>
+
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          p-8
+          grid
+          md:grid-cols-2
+          gap-6
+        ">
+
+          <Block
+
+            t="Patient Details"
+
+            rows={[
+              ["Name","Jeet Sharma"],
+              ["Patient ID",r.patientId],
+              ["Hospital ID","HSP-204832"],
+              ["Age/Gender","52 / Female"]
+            ]}
+          />
+
+
+          <Block
+
+            t="Sample Details"
+
+            rows={[
+              ["Sample ID","SMP-7734-A"],
+              ["Stain","H&E"],
+              ["Priority","Routine"],
+              ["Referring Doctor","Dr. Ananya Rao"]
+            ]}
+          />
+
+        </div>
+
+
+
+        <div className="
+          px-8
+          pb-8
+        ">
+
+          <h3 className="
+            text-xs
+            font-bold
+            text-cyan-700
+            uppercase
+          ">
+            AI Assessment
+          </h3>
+
+
+          <div className="
+            grid
+            md:grid-cols-3
+            gap-3
+            mt-3
+          ">
+
+            <M
+              l="Prediction"
+              v={r.prediction}
+            />
+
+
+            <M
+              l="Malignancy Probability"
+
+              v={
+                `${Number(
+                  r.malignancyProbability || 0
+                ).toFixed(1)}%`
+              }
+            />
+
+
+            <M
+              l="Confidence"
+
+              v={
+                `${Number(
+                  r.confidence || 0
+                ).toFixed(1)}%`
+              }
+            />
+
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          px-8
+          pb-8
+        ">
+
+          <h3 className="
+            text-xs
+            font-bold
+            text-cyan-700
+            uppercase
+          ">
+            Slide Imaging & Explainability
+          </h3>
+
+
+          <div className="
+            grid
+            md:grid-cols-2
+            gap-4
+            mt-3
+          ">
+
+
+            {
+              r.originalImage
+
+              ?
+
+              <img
+                src={r.originalImage}
+
+                className="
+                  rounded-xl
+                  border
+                "
+              />
+
+              :
+
+              <div className="
+                h-44
+                bg-slate-100
+                rounded-xl
+                grid
+                place-items-center
+              ">
+                Original H&E
+              </div>
+            }
+
+
+
+            {
+              r.heatmapImage
+
+              ?
+
+              <img
+                src={r.heatmapImage}
+
+                className="
+                  rounded-xl
+                  border
+                "
+              />
+
+              :
+
+              <div className="
+                h-44
+                bg-slate-100
+                rounded-xl
+                grid
+                place-items-center
+              ">
+                Attention Heatmap
+              </div>
+            }
+
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          px-8
+          pb-8
+        ">
+
+          <h3 className="
+            text-xs
+            font-bold
+            text-cyan-700
+            uppercase
+          ">
+            Biomarker Prioritization
+          </h3>
+
+
+          <div className="
+            grid
+            md:grid-cols-3
+            gap-3
+            mt-3
+          ">
+
+            {
+              (
+                r.biomarkers || []
+              ).map(
+                b=>
+
+                <div
+                  className="
+                    border
+                    rounded-xl
+                    p-4
+                  "
+
+                  key={b.name}
+                >
+
+                  <b>
+                    {b.name}
+                  </b>
+
+                  <div className="
+                    text-xs
+                    font-bold
+                    text-cyan-700
+                    mt-1
+                  ">
+                    {b.priority}
+                  </div>
+
+
+                  <p className="
+                    text-xs
+                    text-slate-500
+                    mt-2
+                  ">
+                    {b.rationale}
+                  </p>
+
+                </div>
+              )
+            }
+
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          px-8
+          pb-8
+        ">
+
+          <h3 className="
+            text-xs
+            font-bold
+            text-cyan-700
+            uppercase
+          ">
+            Clinical Summary
+          </h3>
+
+
+          <p className="
+            text-sm
+            leading-6
+            text-slate-600
+            mt-3
+          ">
+            {r.report}
+          </p>
+
+        </div>
+
+
+
+        <div className="
+          p-6
+          bg-amber-50
+          border-t
+          text-xs
+          text-amber-900
+        ">
+
+          {r.disclaimer}
+
+        </div>
+
+
+
+        <div className="
+          no-print
+          p-5
+          text-right
+        ">
+
+          <button
+
+            onClick={openSpecialists}
+
+            className="
+              btn
+              border
+              bg-white
+              mr-2
+            "
+          >
+
+            Find Specialist
+
+          </button>
+
+
+          <button className="
+            btn
+            bg-emerald-600
+            text-white
+          ">
+
+            Confirm Reviewed
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Block({
+  t,
+  rows
+}){
+
+  return(
+
+    <div>
+
+
+      <h3 className="
+        text-xs
+        font-bold
+        text-cyan-700
+        uppercase
+      ">
+        {t}
+      </h3>
+
+
+      {
+        rows.map(
+          ([a,b])=>
+
+          <div
+            key={a}
+
+            className="
+              flex
+              justify-between
+              py-2
+              border-b
+              text-sm
+            "
+          >
+
+            <span className="
+              text-slate-400
+            ">
+              {a}
+            </span>
+
+            <b>
+              {b}
+            </b>
+
+          </div>
+        )
+      }
+
+    </div>
+  );
+}
+
+
+
+function Analytics(){
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="OPERATIONAL INTELLIGENCE"
+        t="Analytics"
+        s="Demo metrics for the product story."
+      />
+
+
+      <div className="
+        grid
+        md:grid-cols-2
+        xl:grid-cols-4
+        gap-4
+      ">
+
+        {
+          [
+            ["Cases Analyzed","28"],
+            ["Avg Confidence","86.2%"],
+            ["High Priority","31%"],
+            ["Turnaround","1.8s"]
+          ].map(
+            x=>
+
+            <div
+              className="
+                card
+                p-5
+              "
+
+              key={x[0]}
+            >
+
+              <div className="
+                text-xs
+                text-slate-400
+                uppercase
+              ">
+                {x[0]}
+              </div>
+
+              <div className="
+                text-3xl
+                font-bold
+                mt-3
+              ">
+                {x[1]}
+              </div>
+
+            </div>
+          )
+        }
+
+      </div>
+
+
+      <div className="
+        card
+        p-5
+        mt-5
+        h-72
+      ">
+
+        <b>
+          Case Volume
+        </b>
+
+
+        <div className="
+          h-52
+          flex
+          items-end
+          gap-3
+          mt-4
+        ">
+
+          {
+            [
+              40,
+              55,
+              48,
+              72,
+              82,
+              66,
+              93
+            ].map(
+              (h,i)=>
+
+              <div
+                key={i}
+
+                className="
+                  flex-1
+                  grad
+                  rounded-t-lg
+                "
+
+                style={{
+                  height:h+"%"
+                }}
+              />
+            )
+          }
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Hospital(){
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="INTEROPERABILITY"
+        t="Hospital Integration"
+        s="Demo integration surface for LIS/HIS/FHIR."
+      />
+
+
+      <div className="
+        grid
+        md:grid-cols-2
+        xl:grid-cols-3
+        gap-4
+      ">
+
+        {
+          [
+            ["Hospital HIS","Sandbox Connected"],
+            ["Laboratory LIS","Demo Ready"],
+            ["PACS / Slide Archive","Planned"],
+            ["Audit Log","Enabled"],
+            ["SSO / Identity","Planned"],
+            ["Report Export","Ready"]
+          ].map(
+            x=>
+
+            <div
+              className="
+                card
+                p-5
+              "
+
+              key={x[0]}
+            >
+
+              <b>
+                {x[0]}
+              </b>
+
+
+              <div className="
+                text-xs
+                text-emerald-700
+                mt-3
+              ">
+                {x[1]}
+              </div>
+
+            </div>
+          )
+        }
+
+      </div>
+
+
+      <div className="
+        mt-5
+        p-4
+        rounded-xl
+        bg-cyan-50
+        border
+        border-cyan-200
+        text-sm
+      ">
+
+        <b>
+          Demo module:
+        </b>
+
+        {" "}
+        no real hospital system is connected in this hackathon build.
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Cloud(){
+
+  return(
+
+    <div className="fade">
+
+
+      <Title
+        k="DATA WORKSPACE"
+        t="Cloud Storage"
+        s="Demo slide and report storage."
+      />
+
+
+      <div className="
+        grid
+        md:grid-cols-3
+        gap-4
+      ">
+
+
+        <div className="
+          card
+          p-5
+        ">
+
+          <div className="
+            text-xs
+            text-slate-400
+          ">
+            SLIDES
+          </div>
+
+          <div className="
+            text-3xl
+            font-bold
+            mt-2
+          ">
+            24
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          card
+          p-5
+        ">
+
+          <div className="
+            text-xs
+            text-slate-400
+          ">
+            REPORTS
+          </div>
+
+          <div className="
+            text-3xl
+            font-bold
+            mt-2
+          ">
+            19
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          card
+          p-5
+        ">
+
+          <div className="
+            text-xs
+            text-slate-400
+          ">
+            USED
+          </div>
+
+          <div className="
+            text-3xl
+            font-bold
+            mt-2
+          ">
+            38%
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Assistant({
+  chat,
+  input,
+  setInput,
+  ask,
+  result
+}){
+
+  return(
+
+    <div className="
+      fade
+      max-w-5xl
+    ">
+
+
+      <Title
+        k="CASE-AWARE COPILOT"
+        t="AI Assistant"
+        s="Explain current-case output without making a definitive diagnosis."
+      />
+
+
+      <div className="
+        grid
+        lg:grid-cols-[1fr_300px]
+        gap-5
+      ">
+
+
+        <div className="
+          card
+          overflow-hidden
+        ">
+
+
+          <div className="
+            h-[500px]
+            overflow-auto
+            p-5
+            space-y-3
+          ">
+
+            {
+              chat.map(
+                (m,i)=>
+
+                <div
+                  key={i}
+
+                  className={`
+                    flex
+
+                    ${
+                      m.who==="user"
+
+                      ? "justify-end"
+
+                      : ""
+                    }
+                  `}
+                >
+
+                  <div className={`
+                    max-w-[80%]
+                    px-4
+                    py-3
+                    rounded-2xl
+                    text-sm
+                    leading-6
+
+                    ${
+                      m.who==="user"
+
+                      ? "bg-cyan-600 text-white"
+
+                      : "bg-slate-100"
+                    }
+                  `}>
+
+                    {m.text}
+
+                  </div>
+
+                </div>
+              )
+            }
+
+          </div>
+
+
+
+          <div className="
+            border-t
+            p-4
+            flex
+            gap-2
+          ">
+
+            <input
+
+              value={input}
+
+              onChange={
+                e=>setInput(
+                  e.target.value
+                )
+              }
+
+              onKeyDown={
+                e=>
+                  e.key==="Enter" &&
+                  ask()
+              }
+
+              className="
+                flex-1
+                h-11
+                rounded-xl
+                border
+                px-3
+              "
+
+              placeholder="
+                Ask about this case...
+              "
+            />
+
+
+            <button
+              onClick={ask}
+
+              className="
+                btn
+                grad
+              "
+            >
+
+              Send
+
+            </button>
+
+          </div>
+
+        </div>
+
+
+
+        <div className="
+          card
+          p-5
+          h-fit
+        ">
+
+          <div className="
+            text-xs
+            text-slate-400
+          ">
+            CURRENT CASE
+          </div>
+
+
+          <h2 className="
+            text-xl
+            font-bold
+          ">
+            {result.patientId}
+          </h2>
+
+
+          <div className="mt-4">
+            {result.prediction}
+          </div>
+
+
+          <div className="
+            text-3xl
+            font-bold
+          ">
+
+            {
+              Number(
+                result.confidence || 0
+              ).toFixed(1)
+            }%
+
+          </div>
+
+
+          <div className="
+            mt-4
+            p-3
+            bg-amber-50
+            rounded-xl
+            text-xs
+          ">
+
+            Explains model output only.
+            No definitive diagnosis or treatment advice.
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Settings({
+  api,
+  setApi,
+  test,
+  status
+}){
+
+  return(
+
+    <div className="
+      fade
+      max-w-4xl
+    ">
+
+
+      <Title
+        k="CONFIGURATION"
+        t="Settings"
+        s="Backend and prototype settings."
+      />
+
+
+      <div className="
+        card
+        p-6
+      ">
+
+        <b>
+          Backend Connection
+        </b>
+
+
+        <div className="
+          flex
+          gap-2
+          mt-3
+        ">
+
+          <input
+
+            value={api}
+
+            onChange={
+              e=>setApi(
+                e.target.value
+              )
+            }
+
+            className="
+              flex-1
+              h-11
+              rounded-xl
+              border
+              px-3
+            "
+
+            placeholder="
+              https://xxxx.ngrok-free.app
+            "
+          />
+
+
+          <button
+            onClick={test}
+
+            className="
+              btn
+              grad
+            "
+          >
+
+            Test
+
+          </button>
+
+        </div>
+
+
+        <div className="
+          text-xs
+          text-slate-400
+          mt-2
+        ">
+          Status: {status}
+        </div>
+
+
+
+        <div className="
+          grid
+          md:grid-cols-2
+          gap-4
+          mt-6
+        ">
+
+
+          <label className="
+            text-sm
+            font-semibold
+          ">
+
+            Hospital
+
+            <input
+
+              defaultValue="
+                Apex Institute of Oncology
+              "
+
+              className="
+                mt-2
+                w-full
+                h-11
+                rounded-xl
+                border
+                px-3
+              "
+            />
+
+          </label>
+
+
+
+          <label className="
+            text-sm
+            font-semibold
+          ">
+
+            User
+
+            <input
+
+              defaultValue="
+                Dr. Kavya Mehra
+              "
+
+              className="
+                mt-2
+                w-full
+                h-11
+                rounded-xl
+                border
+                px-3
+              "
+            />
+
+          </label>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function Specialists({
+  close
+}){
+
+  let d=[
+
+    [
+      "Dr. Kavya Mehra",
+      "Pathologist",
+      "Apex Institute of Oncology",
+      "2.4 km"
+    ],
+
+    [
+      "Dr. Arjun Menon",
+      "Medical Oncologist",
+      "City Oncology Centre",
+      "4.1 km"
+    ],
+
+    [
+      "Dr. Naina Joseph",
+      "Surgical Oncologist",
+      "Metro Cancer Institute",
+      "5.7 km"
+    ],
+
+    [
+      "Dr. Ishaan Rao",
+      "Breast Surgeon",
+      "Apex Institute of Oncology",
+      "2.4 km"
+    ]
+
+  ];
+
+
+  return(
+
+    <div className="
+      fixed
+      inset-0
+      bg-slate-900/40
+      z-50
+      grid
+      place-items-center
+      p-4
+    ">
+
+
+      <div className="
+        bg-white
+        rounded-2xl
+        w-full
+        max-w-3xl
+        overflow-hidden
+      ">
+
+
+        <div className="
+          p-5
+          border-b
+          flex
+          justify-between
+        ">
+
+          <div>
+
+            <b>
+              Find Specialist
+            </b>
+
+            <div className="
+              text-xs
+              text-slate-400
+            ">
+              Demo directory — not live booking.
+            </div>
+
+          </div>
+
+
+          <button
+            onClick={close}
+          >
+            ✕
+          </button>
+
+        </div>
+
+
+
+        <div className="
+          p-5
+          grid
+          md:grid-cols-2
+          gap-4
+        ">
+
+          {
+            d.map(
+              x=>
+
+              <div
+
+                className="
+                  border
+                  rounded-xl
+                  p-4
+                "
+
+                key={x[0]}
+              >
+
+                <b>
+                  {x[0]}
+                </b>
+
+                <div className="
+                  text-xs
+                  text-cyan-700
+                ">
+                  {x[1]}
+                </div>
+
+                <div className="
+                  text-xs
+                  text-slate-400
+                ">
+
+                  {x[2]}
+                  {" • "}
+                  {x[3]}
+
+                </div>
+
+
+                <div className="
+                  flex
+                  gap-2
+                  mt-4
+                ">
+
+                  <button className="
+                    btn
+                    border
+                    bg-white
+                    flex-1
+                  ">
+                    Call
+                  </button>
+
+                  <button className="
+                    btn
+                    grad
+                    flex-1
+                  ">
+                    Request Consult
+                  </button>
+
+                </div>
+
+              </div>
+            )
+          }
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+ReactDOM
+  .createRoot(
+    document.getElementById("root")
+  )
+  .render(
+    <App/>
+  );
+
+</script>
+
+</body>
+</html>
